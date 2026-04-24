@@ -1,10 +1,16 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, render_template, redirect, url_for, session, flash
+from werkzeug.security import generate_password_hash, check_password_hash
+from database import get_connection, create_tables
 import fitz
 from model_engine import analyze_contract
 
 app = Flask(__name__)
+app.secret_key = "supersecret"
 
-# ── Allow the browser to talk to Flask during local dev ──────────────────────
+create_tables()
+
+
+# ── CORS (local dev) ──────────────────────────────────────────────────────────
 @app.after_request
 def add_cors(response):
     response.headers["Access-Control-Allow-Origin"]  = "*"
@@ -12,38 +18,114 @@ def add_cors(response):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
 
+
 # ── Pages ─────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
     return render_template("home.html")
 
-# ── Main analysis endpoint ────────────────────────────────────────────────────
-@app.route('/analyze', methods=['POST'])
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if "user_id" in session:
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        email    = request.form.get("email", "").lower().strip()
+        password = request.form.get("password", "")
+
+        conn = get_connection()
+        cur  = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE email = ?", (email,))
+        user = cur.fetchone()
+        conn.close()
+
+        if not user:
+            flash("User does not exist.", "error")
+            return redirect(url_for("login"))
+
+        if not check_password_hash(user["password"], password):
+            flash("Incorrect password.", "error")
+            return redirect(url_for("login"))
+
+        session["user_id"]    = user["id"]
+        session["user_email"] = user["email"]
+        return redirect(url_for("index"))
+
+    return render_template("login.html")
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if "user_id" in session:
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        email    = request.form.get("email", "").lower().strip()
+        password = request.form.get("password", "")
+
+        if not email or not password:
+            flash("Email and password are required.", "error")
+            return redirect(url_for("register"))
+
+        if len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+            return redirect(url_for("register"))
+
+        conn = get_connection()
+        cur  = conn.cursor()
+
+        cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+        if cur.fetchone():
+            conn.close()
+            flash("Email already registered.", "error")
+            return redirect(url_for("register"))
+
+        cur.execute(
+            "INSERT INTO users (email, password) VALUES (?, ?)",
+            (email, generate_password_hash(password))
+        )
+        conn.commit()
+        conn.close()
+
+        flash("Account created! Please sign in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("register.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ── Analysis endpoint ─────────────────────────────────────────────────────────
+@app.route("/analyze", methods=["POST"])
 def analyze():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
     text_content = ""
-    
-    # 1. Check for Pasted Text
-    pasted_text = request.form.get('contract_text')
+
+    pasted_text = request.form.get("contract_text")
     if pasted_text:
         text_content = pasted_text
-        
-    # 2. Check for File Upload
-    if 'contract_file' in request.files:
-        file = request.files['contract_file']
-        if file.filename != '' and file.filename.endswith('.pdf'):
+
+    if "contract_file" in request.files:
+        file = request.files["contract_file"]
+        if file.filename != "" and file.filename.endswith(".pdf"):
             doc = fitz.open(stream=file.read(), filetype="pdf")
             text_content = "".join([page.get_text() for page in doc])
 
     if not text_content:
-        return render_template('result.html', error="No content provided or invalid file type.")
+        return render_template("home.html", error="No content provided or invalid file type.")
 
-    # 3. Run your Legal-BERT logic
     results = analyze_contract(text_content)
-
-    # 4. Return a results page (or the same page with results)
-    return render_template('result.html', report=results)
+    return render_template("result.html", report=results)
 
 
 if __name__ == "__main__":
-    # debug=True auto-reloads on file changes during development
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="0.0.0.0")

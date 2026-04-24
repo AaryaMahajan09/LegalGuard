@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='reg.css') }}">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet"/>
+<title>Register · LegalGuard</title>
+</head>
+
+<body>
+<div class="background">
+  <div class="box">
+
+    <div class="image">
+      <img src="{{ url_for('static', filename='images/scan-img.png') }}" alt="">
+    </div>
+
+    <h1 class="center">LegalGuard</h1>
+    <h3 class="center subtitle">AI Contract Auditor</h3>
+
+    <div class="login-box">
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash-msg {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <h2 class="center">Create Account</h2>
+      <p class="center subtitle">Sign up to get started</p>
+
+      <form method="post" action="/register">
+
+        <label>Email</label>
+        <input type="email" name="email" class="input" placeholder="you@example.com" required>
+
+        <label>Password</label>
+        <input type="password" name="password" class="input" placeholder="At least 6 characters" required minlength="6">
+
+        <input type="submit" value="Create Account" class="submit">
+
+      </form>
+
+      <div class="register">
+        <p>Already have an account?</p>
+        <a href="/login">Sign In</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>
